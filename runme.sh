@@ -9,7 +9,16 @@ python create_validation.py --dataset_dir=$DATASET_DIR --workspace=$WORKSPACE
 python features.py logmel --dataset_dir=$DATASET_DIR --workspace=$WORKSPACE
 
 # Train model
-CUDA_VISIBLE_DEVICES=6 python tmp01.py train --workspace=$WORKSPACE --verified_only=False --validation=True
+CUDA_VISIBLE_DEVICES=4 python main_cnn.py train --workspace=$WORKSPACE --verified_only=False --validation=True
 
-CUDA_VISIBLE_DEVICES=6 python tmp01.py inference --workspace=$WORKSPACE --iteration=10000
+# Inference on validation
+CUDA_VISIBLE_DEVICES=4 python main_cnn.py inference_validation --workspace=$WORKSPACE --iteration=3000
+
+
+######
+# Train model on full data
+CUDA_VISIBLE_DEVICES=4 python main_cnn.py train --workspace=$WORKSPACE --verified_only=False --validation=True
+
+# Inference on private data
+CUDA_VISIBLE_DEVICES=4 python main_cnn.py inference_private --workspace=$WORKSPACE --iteration=3000
 

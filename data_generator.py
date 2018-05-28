@@ -17,6 +17,7 @@ class Generator(object):
         
         with h5py.File(hdf5_path, 'r') as hf:
             
+            self.filenames = [name.decode() for name in hf['filenames'][:]]
             self.x = hf['data'][:]
             labels = hf['labels'][:]
             manually_verifications = hf['manually_verifications'][:]
@@ -123,10 +124,11 @@ class Generator(object):
             [bgn, fin] = self.bgn_fin_indices[id]
             slice_x = self.x[bgn : fin]
             slice_y = self.y[id]
+            filename = self.filenames[id]
             
             count += 1
             
-            yield slice_x, slice_y
+            yield slice_x, slice_y, filename
             
             
 class Generator2(Generator):
