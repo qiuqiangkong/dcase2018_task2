@@ -75,7 +75,7 @@ def calculate_training_data_features(args):
     feature_type = 'logmel'
 
     # Paths
-    csv_file = os.path.join(workspace, 'validation.csv')
+    csv_file = os.path.join(workspace, 'validation_two.csv')
     
     feature_h5_path = os.path.join(workspace, 'features', feature_type, 
                                    "{}.h5".format(data_type))
@@ -149,7 +149,7 @@ def calculate_training_data_features(args):
         
         count += 1
         
-        # if count == 3:
+        # if count == 300:
         #     break
 
     hf.create_dataset(name='filenames', data=filenames, dtype='S32')
@@ -273,4 +273,4 @@ if __name__ == '__main__':
     
     if args.mode == 'logmel':
         calculate_training_data_features(args)
-        calculate_testing_data_features(args)
+        # calculate_testing_data_features(args)

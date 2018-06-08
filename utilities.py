@@ -77,6 +77,19 @@ def pad_seq(x, time_steps):
     return np.concatenate((x, np.zeros((time_steps - seq_len, feature_dim))))
 
 
+def pad_or_trunc(x, max_len):
+    if len(x) == max_len:
+        return x
+    
+    elif len(x) > max_len:
+        return x[0 : max_len]
+        
+    else:
+        (seq_len, freq_bins) = x.shape
+        pad = np.zeros((max_len - seq_len, freq_bins))
+        return np.concatenate((x, pad), axis=0)
+
+
 def mat_2d_to_3d(x, agg_num, hop):
     """Segment 2D array to 3D segments. 
     
@@ -97,7 +110,7 @@ def mat_2d_to_3d(x, agg_num, hop):
     len_x = len(x)
     i1 = 0
     x3d = []
-    while (i1 + agg_num <= len_x):
-        x3d.append(x[i1 : i1 + agg_num])
+    while (i1 + agg_num <= len_x + hop):
+        x3d.append(pad_or_trunc(x[i1 : i1 + agg_num], agg_num))
         i1 += hop
     return np.array(x3d)
