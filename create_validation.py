@@ -8,53 +8,43 @@ import config
 
 
 def create_validation(args):
-    """Create validation file.
-    Write out a new csv file for validation, with an extra validation flag to
-    existing train.csv. Validation data are extracted from manually verified
-    data.
-
-    Training: 2890 manually verfieid + 5763 not manually verified.
-    Validation: 820 manually verified.
+    """Read train.csv and add a validation flag, then write out to 
+    validation.csv
     """
 
+    random.seed(1234)
+    
+    validation_audios_per_class = 20
+    """Total number for validation is 20 * 41 (classes) = 820"""
+    
     dataset_dir = args.dataset_dir
     workspace = args.workspace
-
+    
     labels = config.labels
-
-    random.seed(1234)
-    validation_audios_per_class = 20    # In total 820 audios for validation.
-
-    # Open csv
+    
     csv_path = os.path.join(dataset_dir, 'train.csv')
+    
     df = pd.DataFrame(pd.read_csv(csv_path))
-
-    num_audios = df.shape[0]
-
+    
     dict = {label: [] for label in labels}
-    """key: label, value: list of manually verified audio names. """
-
+    
+    num_rows = df.shape[0]
+    
     # Find out varified audios
-    for n in range(num_audios):
-
+    for n in range(num_rows):
         fname = df.iloc[n]['fname']
         label = df.iloc[n]['label']
         manually_verified = df.iloc[n]['manually_verified']
-
+    
         if manually_verified == 1:
             dict[label].append(fname)
-
-    # Names of audios for validation
+    
+    # Keep audios for validation
     validation_names = []
-
+    
     for label in labels:
-
         random.shuffle(dict[label])
-        validation_names += dict[label][0: validation_audios_per_class]
-
-    # Write out validation csv
-    df_ex = df
-    df_ex['validation'] = 0
+        validation_names += dict[label][0 : validation_audios_per_class]
 
     for n in range(num_audios):
 

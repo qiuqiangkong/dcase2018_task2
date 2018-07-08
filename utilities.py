@@ -1,4 +1,5 @@
 import os
+<<<<<<< HEAD
 import numpy
 import argparse
 import sys
@@ -13,7 +14,7 @@ import logging
 
 import config
     
-   
+    
 def create_folder(fd):
     if not os.path.exists(fd):
         os.makedirs(fd)
