@@ -1,5 +1,4 @@
 import os
-<<<<<<< HEAD
 import numpy
 import argparse
 import sys
