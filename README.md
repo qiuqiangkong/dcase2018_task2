@@ -80,8 +80,8 @@ The class-wise accuracy is shown as blow:
 ![alt text](appendixes/class_wise_accuracy.png)
 
 ## Summary
-This codebase provides a convolutional neural network (CNN) for DCASE 2018 challenge Task 2. 
+This codebase provides a convolutional neural network (CNN) for DCASE 2018 challenge Task 2. Some sound classes such as 'applause', 'bark' have high classification accuracy. Some sound classes such as 'squeak', 'telephone' have low classification accuracy. 
 
 ### External link
 
-The official baseline system implemented using Keras can be found https://github.com/DCASE-REPO/dcase2018_baseline
+The official baseline system implemented using Keras can be found in https://github.com/DCASE-REPO/dcase2018_baseline
