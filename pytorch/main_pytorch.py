@@ -1,6 +1,8 @@
+import os
+import sys
+sys.path.insert(1, os.path.join(sys.path[0], '../utils'))
 import numpy as np
 import time
-import os
 import argparse
 from sklearn import preprocessing
 import matplotlib.pyplot as plt
@@ -18,7 +20,7 @@ from torch.autograd import Variable
 from utilities import (create_folder, get_filename, create_logging, 
                        calculate_accuracy, calculate_mapk, 
                        print_class_wise_accuracy, plot_class_wise_accuracy)
-from models_pytorch import BaselineCnn
+from models_pytorch import move_data_to_gpu, BaselineCnn
 from data_generator import DataGenerator, TestDataGenerator
 import config
 
@@ -27,25 +29,6 @@ kmax = config.kmax
 time_steps = config.time_steps
 train_hop_frames = time_steps // 2
 test_hop_frames = config.test_hop_frames
-
-    
-def move_data_to_gpu(x, cuda):
-
-    if 'float' in str(x.dtype):
-        x = torch.Tensor(x)
-
-    elif 'int' in str(x.dtype):
-        x = torch.LongTensor(x)
-
-    else:
-        raise Exception("Error!")
-
-    if cuda:
-        x = x.cuda()
-
-    x = Variable(x)
-
-    return x
     
     
 def aggregate(outputs):
@@ -187,11 +170,13 @@ def train(args):
     if validate:
         validation_csv = os.path.join(workspace, 'validate_meta.csv')
         
+        model_dir = os.path.join(workspace, 'models', filename, 
+            'verified_only={}, validate={}'.format(verified_only, validate))
+        
     else:
         validation_csv = None
     
-    model_dir = os.path.join(workspace, 'models', filename, 
-        'verified_only={}, validate={}'.format(verified_only, validate))
+
     
     create_folder(model_dir)
     

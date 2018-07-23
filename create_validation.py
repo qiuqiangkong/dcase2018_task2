@@ -1,5 +1,7 @@
-import numpy as np
 import os
+import sys
+sys.path.insert(1, os.path.join(sys.path[0], 'utils'))
+import numpy as np
 import pandas as pd
 import argparse
 import random
@@ -9,7 +11,7 @@ import config
 
 def create_validation(args):
     """Read train.csv and add a validation flag, then write out to 
-    validation.csv
+    validate_meta.csv
     """
 
     random.seed(1234)
@@ -22,8 +24,10 @@ def create_validation(args):
     
     labels = config.labels
     
+    # Paths
     csv_path = os.path.join(dataset_dir, 'train.csv')
     
+    # Read csv
     df = pd.DataFrame(pd.read_csv(csv_path))
     
     dict = {label: [] for label in labels}
@@ -39,14 +43,17 @@ def create_validation(args):
         if manually_verified == 1:
             dict[label].append(fname)
     
-    # Keep audios for validation
+    # Audio names for validation
     validation_names = []
     
     for label in labels:
         random.shuffle(dict[label])
         validation_names += dict[label][0 : validation_audios_per_class]
 
-    for n in range(num_audios):
+    df_ex = df
+    df_ex['validation'] = 0
+
+    for n in range(num_rows):
 
         fname = df_ex.iloc[n]['fname']
 
@@ -54,6 +61,7 @@ def create_validation(args):
 
             df_ex.iloc[n, 3] = 1
 
+    # Write out validation csv
     out_path = os.path.join(workspace, 'validate_meta.csv')
     df_ex.to_csv(out_path)
 
