@@ -160,7 +160,7 @@ class DataGenerator(object):
     def generate_train(self):
         
         batch_size = self.batch_size
-        patch_bgn_fin_y_tuples = self.train_patch_bgn_fin_y_tuples
+        patch_bgn_fin_y_tuples = self.train_patch_bgn_fin_y_tuples.copy()
         time_steps = self.time_steps
 
         patches_num = len(patch_bgn_fin_y_tuples)
@@ -227,10 +227,10 @@ class DataGenerator(object):
         """
         
         if data_type == 'train':
-            audio_indexes = self.train_audio_indexes
+            audio_indexes = np.array(self.train_audio_indexes)
             
         elif data_type == 'validate':
-            audio_indexes = self.validate_audio_indexes
+            audio_indexes = np.array(self.validate_audio_indexes)
             
         else:
             raise Exception('Incorrect data_type!')

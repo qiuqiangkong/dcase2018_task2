@@ -458,22 +458,22 @@ if __name__ == '__main__':
     subparsers = parser.add_subparsers(dest='mode')
 
     parser_train = subparsers.add_parser('train')
-    parser_train.add_argument('--workspace', type=str)
+    parser_train.add_argument('--workspace', type=str, required=True)
     parser_train.add_argument('--validate', action='store_true', default=False)
     parser_train.add_argument('--holdout_fold', type=int, choices=[1, 2, 3, 4])
     parser_train.add_argument('--cuda', action='store_true', default=False)
     parser_train.add_argument('--mini_data', action='store_true', default=False)
     
     parser_inference_validation = subparsers.add_parser('inference_validation')
-    parser_inference_validation.add_argument('--workspace', type=str)    
+    parser_inference_validation.add_argument('--workspace', type=str, required=True)    
     parser_inference_validation.add_argument('--holdout_fold', type=int, choices=[1, 2, 3, 4])
-    parser_inference_validation.add_argument('--iteration', type=str)
+    parser_inference_validation.add_argument('--iteration', type=str, required=True)
     parser_inference_validation.add_argument('--cuda', action='store_true', default=False)
     
     parser_inference_testing_data = subparsers.add_parser('inference_testing_data')
-    parser_inference_testing_data.add_argument('--workspace', type=str)    
+    parser_inference_testing_data.add_argument('--workspace', type=str, required=True)    
     parser_inference_testing_data.add_argument('--verified_only', action='store_true', default=False)
-    parser_inference_testing_data.add_argument('--iteration', type=str)
+    parser_inference_testing_data.add_argument('--iteration', type=str, required=True)
     parser_inference_testing_data.add_argument('--cuda', action='store_true', default=False)
     
     args = parser.parse_args()
