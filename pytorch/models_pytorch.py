@@ -3,6 +3,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd import Variable
 
 
 def move_data_to_gpu(x, cuda):
@@ -18,8 +19,6 @@ def move_data_to_gpu(x, cuda):
 
     if cuda:
         x = x.cuda()
-
-    x = Variable(x)
 
     return x
 
@@ -97,29 +96,28 @@ class BaselineCnn(nn.Module):
         init_bn(self.bn4)
 
     def forward(self, input, return_bottleneck=False):
-        
         (_, seq_len, mel_bins) = input.shape
 
         x = input.view(-1, 1, seq_len, mel_bins)
+        """(samples_num, feature_maps, time_steps, freq_num)"""
+        
         x = F.relu(self.bn1(self.conv1(x)))
         x = F.relu(self.bn2(self.conv2(x)))
         x = F.relu(self.bn3(self.conv3(x)))
         x = F.relu(self.bn4(self.conv4(x)))
-        """(samples_num, feature_maps, time_steps, freq_num)"""
-
+        
         x = F.max_pool2d(x, kernel_size=x.shape[2:])
         x = x.view(x.shape[0:2])
 
         x = F.log_softmax(self.fc1(x), dim=-1)
 
         return x
+    
 
-
-"""
-class ConvBlock(nn.Module):
+class VggishConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
         
-        super(ConvBlock, self).__init__()
+        super(VggishConvBlock, self).__init__()
         
         self.conv1 = nn.Conv2d(in_channels=in_channels, 
                               out_channels=out_channels,
@@ -154,31 +152,38 @@ class ConvBlock(nn.Module):
         return x
     
     
-class BaselineCnn(nn.Module):
+class Vggish(nn.Module):
     def __init__(self, classes_num):
         
-        super(BaselineCnn, self).__init__()
-        
-        self.conv_block1 = ConvBlock(in_channels=1, out_channels=64)
-        self.conv_block2 = ConvBlock(in_channels=64, out_channels=128)
-        self.conv_block3 = ConvBlock(in_channels=128, out_channels=256)
-        self.conv_block4 = ConvBlock(in_channels=256, out_channels=512)
+        super(Vggish, self).__init__()
+
+        self.conv_block1 = VggishConvBlock(in_channels=1, out_channels=64)
+        self.conv_block2 = VggishConvBlock(in_channels=64, out_channels=128)
+        self.conv_block3 = VggishConvBlock(in_channels=128, out_channels=256)
+        self.conv_block4 = VggishConvBlock(in_channels=256, out_channels=512)
+
         self.fc_final = nn.Linear(512, classes_num, bias=True)
+
         self.init_weights()
-        
+
     def init_weights(self):
+
         init_layer(self.fc_final)
-        
+
     def forward(self, input, return_bottleneck=False):
         (_, seq_len, mel_bins) = input.shape
+
         x = input.view(-1, 1, seq_len, mel_bins)
+        '''(samples_num, feature_maps, time_steps, freq_num)'''
+
         x = self.conv_block1(x)
         x = self.conv_block2(x)
         x = self.conv_block3(x)
         x = self.conv_block4(x)
-        '''(samples_num, feature_maps, time_steps, freq_num)'''
+
         x = F.max_pool2d(x, kernel_size=x.shape[2:])
         x = x.view(x.shape[0:2])
+
         x = F.log_softmax(self.fc_final(x), dim=-1)
+
         return x
-"""

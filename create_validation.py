@@ -9,20 +9,17 @@ import random
 import config
 
 
-def create_validation(args):
-    """Read train.csv and add a validation flag, then write out to 
-    validate_meta.csv
+def create_validation_folds(args):
+    """Create validation file with folds and write out to validate_meta.csv
     """
 
-    random.seed(1234)
-    
-    validation_audios_per_class = 20
-    """Total number for validation is 20 * 41 (classes) = 820"""
-    
+    # Arguments & parameters
     dataset_dir = args.dataset_dir
     workspace = args.workspace
     
     labels = config.labels
+    random_state = np.random.RandomState(1234)
+    folds_num = 4
     
     # Paths
     csv_path = os.path.join(dataset_dir, 'train.csv')
@@ -30,36 +27,20 @@ def create_validation(args):
     # Read csv
     df = pd.DataFrame(pd.read_csv(csv_path))
     
-    dict = {label: [] for label in labels}
+    indexes = np.arange(len(df))
+    random_state.shuffle(indexes)
     
-    num_rows = df.shape[0]
+    audios_num = len(df)
+    audios_num_per_fold = int(audios_num // folds_num)
+
+    # Create folds
+    folds = np.zeros(audios_num, dtype=np.int32)
     
-    # Find out varified audios
-    for n in range(num_rows):
-        fname = df.iloc[n]['fname']
-        label = df.iloc[n]['label']
-        manually_verified = df.iloc[n]['manually_verified']
-    
-        if manually_verified == 1:
-            dict[label].append(fname)
-    
-    # Audio names for validation
-    validation_names = []
-    
-    for label in labels:
-        random.shuffle(dict[label])
-        validation_names += dict[label][0 : validation_audios_per_class]
+    for n in range(audios_num):
+        folds[indexes[n]] = (n % folds_num) + 1
 
     df_ex = df
-    df_ex['validation'] = 0
-
-    for n in range(num_rows):
-
-        fname = df_ex.iloc[n]['fname']
-
-        if fname in validation_names:
-
-            df_ex.iloc[n, 3] = 1
+    df_ex['fold'] = folds
 
     # Write out validation csv
     out_path = os.path.join(workspace, 'validate_meta.csv')
@@ -76,4 +57,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    create_validation(args)
+    create_validation_folds(args)

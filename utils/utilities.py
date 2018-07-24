@@ -99,64 +99,6 @@ def calculate_accuracy(output, target):
     acc = np.sum(output == target) / float(len(target))
     return acc
     
-    
-def apk(actual, predicted, k=10):
-    """
-    Computes the average precision at k.
-    This function computes the average prescision at k between two lists of
-    items.
-    Parameters
-    ----------
-    actual : list
-             A list of elements that are to be predicted (order doesn't matter)
-    predicted : list
-                A list of predicted elements (order does matter)
-    k : int, optional
-        The maximum number of predicted elements
-    Returns
-    -------
-    score : double
-            The average precision at k over the input lists
-    """
-    if len(predicted)>k:
-        predicted = predicted[:k]
-
-    score = 0.0
-    num_hits = 0.0
-
-    for i,p in enumerate(predicted):
-        if p in actual and p not in predicted[:i]:
-            num_hits += 1.0
-            score += num_hits / (i+1.0)
-
-    if not actual:
-        return 0.0
-
-    return score / min(len(actual), k)
-
-
-def calculate_mapk(actual, predicted, k=10):
-    """
-    Computes the mean average precision at k.
-    This function computes the mean average prescision at k between two lists
-    of lists of items.
-    Parameters
-    ----------
-    actual : list
-             A list of lists of elements that are to be predicted 
-             (order doesn't matter in the lists)
-    predicted : list
-                A list of lists of predicted elements
-                (order matters in the lists)
-    k : int, optional
-        The maximum number of predicted elements
-    Returns
-    -------
-    score : double
-            The mean average precision at k over the input lists
-    """
-    return np.mean([apk(a,p,k) for a,p in zip(actual, predicted)])
-
 
 def print_class_wise_accuracy(output, target):
     """Print class wise accuracy."""
@@ -164,41 +106,71 @@ def print_class_wise_accuracy(output, target):
     labels = config.labels
     ix_to_lb = config.ix_to_lb
     
-    correct_dict = {label: 0 for label in labels}
-    total_dict = {label: 0 for label in labels}
-    
+    correctness = np.zeros(len(labels), dtype=np.int32)
+    total = np.zeros(len(labels), dtype=np.int32)
+  
     for n in range(len(target)):
         
-        label = ix_to_lb[target[n]]
-        total_dict[label] += 1
+        total[target[n]] += 1
         
         if output[n] == target[n]:
-            correct_dict[label] += 1
+            correctness[target[n]] += 1
         
-    accuracy_array = []
+    class_wise_accuracy = correctness.astype(np.float32) / total
     
-    logging.info("")        
-    for label in labels:
-        accuracy = correct_dict[label] / float(total_dict[label])
-        accuracy_array.append(accuracy)
-        logging.info("{:<30}{}/{}\t{:.2f}".format(label, correct_dict[label], total_dict[label], accuracy))
+    logging.info('{:<30}{}/{}\t{}'.format(
+        'event labels', 'correct', 'total', 'accuracy'))
         
-    accuracy_array = np.array(accuracy_array)
+    for (n, label) in enumerate(labels):
+        logging.info('{:<30}{}/{}\t\t{:.2f}'.format(
+            label, correctness[n], total[n], class_wise_accuracy[n]))
+        
+    class_wise_accuracy = np.array(class_wise_accuracy)
     
-    return accuracy_array
+    return class_wise_accuracy, correctness, total
 
     
-def plot_class_wise_accuracy(accuracy_array):
+def plot_class_wise_accuracy(class_wise_accuracy):
     """Plot accuracy."""
     
     labels = config.labels
     classes_num = len(labels)
     
     fig, ax = plt.subplots(1, 1, figsize=(13, 5))
-    ax.bar(np.arange(classes_num), accuracy_array, alpha=0.5)
+    ax.bar(np.arange(classes_num), class_wise_accuracy, alpha=0.5)
     ax.set_xlim(0, classes_num)
     ax.set_ylim(0., 1.)
     ax.xaxis.set_ticks(np.arange(classes_num))
     ax.xaxis.set_ticklabels(labels, rotation=90, fontsize='large')
     plt.tight_layout()
     plt.show()
+    
+    
+def write_testing_data_submission_csv(submission_path, audio_names, 
+                                      sorted_indices):
+    
+    kmax = config.kmax
+    ix_to_lb = config.ix_to_lb
+    corrupted_files = config.corrupted_files
+    
+    # Write result to submission csv
+    f = open(submission_path, 'w')
+    
+    f.write('fname,label\n')
+    
+    for (n, audio_name) in enumerate(audio_names):
+        
+        f.write('{},'.format(audio_name))
+        
+        predicted_labels = [ix_to_lb[sorted_indices[n, k]] for k in range(kmax)]
+        
+        f.write(' '.join(predicted_labels))
+            
+        f.write('\n')
+    
+    for audio_name in corrupted_files:
+        f.write('{},{}\n'.format(audio_name, 'Acoustic_guitar'))
+    
+    f.close()
+    
+    print("Write result to {}".format(submission_path))

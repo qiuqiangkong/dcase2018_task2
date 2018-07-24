@@ -9,29 +9,42 @@ import matplotlib.pyplot as plt
 import math
 import h5py
 import sys
+import pickle
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.data as data
 import torch.optim as optim
-from torch.autograd import Variable
 
 from utilities import (create_folder, get_filename, create_logging, 
-                       calculate_accuracy, calculate_mapk, 
-                       print_class_wise_accuracy, plot_class_wise_accuracy)
-from models_pytorch import move_data_to_gpu, BaselineCnn
+                       calculate_accuracy, 
+                       print_class_wise_accuracy, plot_class_wise_accuracy, 
+                       write_testing_data_submission_csv)
+from average_precision import mapk
+from models_pytorch import move_data_to_gpu, BaselineCnn, Vggish
 from data_generator import DataGenerator, TestDataGenerator
 import config
 
 
+# Hyper-parameters
+Model = Vggish
+batch_size = 128
+time_steps = 128
+train_hop_frames = 64
+test_hop_frames = 16
 kmax = config.kmax
-time_steps = config.time_steps
-train_hop_frames = time_steps // 2
-test_hop_frames = config.test_hop_frames
     
     
-def aggregate(outputs):
+def aggregate_outputs(outputs):
+    """Aggregate the prediction of patches of audio clips. 
+    
+    Args:
+      outputs: (audios_num, patches_num, classes_num)
+      
+    Returns:
+      agg_outputs: (audios_num)
+    """
     
     agg_outputs = []
     
@@ -58,91 +71,100 @@ def evaluate(model, generator, data_type, cuda):
       mapk: float
     """
 
-    model.eval()
-    
     if data_type == 'train':
-        generate_func = generator.generate_train_slices(
-            hop_frames=test_hop_frames, max_audios=100)
+        max_audios_num = 1000   # A small portion of training data to evaluate
     
     elif data_type == 'validate':
-        generate_func = generator.generate_validate_slices(
-            hop_frames=train_hop_frames, max_audios=None)
+        max_audios_num = None   # All evaluation data to evaluate
+
+    generate_func = generator.generate_validate_slices(
+        data_type=data_type, 
+        manually_verified_only=True, 
+        shuffle=True, 
+        max_audios_num=max_audios_num)
     
     # Forward
-    (outputs, targets, audio_names) = forward(model=model, 
-                                              generate_func=generate_func, 
-                                              cuda=cuda, 
-                                              has_target=True)
-    '''outputs: (audios_num, patches_num, classes_num), targets: (audios_num,)'''
+    dict = forward(model=model, 
+                   generate_func=generate_func, 
+                   cuda=cuda, 
+                   return_target=True)
 
-    outputs = aggregate(outputs)
+    outputs = dict['output']    # (audios_num, patches_num, classes_num)
+    targets = dict['target']    # (audios_num,)
+
+    agg_outputs = aggregate_outputs(outputs)
     '''(audios_num, classes_num)'''
 
-    predictions = np.argmax(outputs, axis=-1)
+    predictions = np.argmax(agg_outputs, axis=-1)
     '''(audios_num,)'''
     
-    sorted_indices = np.argsort(outputs, axis=-1)[:, ::-1][:, :kmax]
+    sorted_indices = np.argsort(agg_outputs, axis=-1)[:, ::-1][:, :kmax]
     '''(audios_num, kmax)'''
 
     # Accuracy
     accuracy = calculate_accuracy(predictions, targets)
 
     # mAP
-    mapk = calculate_mapk(targets[:, np.newaxis], sorted_indices, k=kmax)
+    mapk_value = mapk(actual=[[e] for e in targets], 
+                      predicted=[e.tolist() for e in sorted_indices], 
+                      k=kmax)
 
-    return accuracy, mapk
+    return accuracy, mapk_value
     
- 
-def forward(model, generate_func, cuda, has_target):
+    
+def forward(model, generate_func, cuda, return_target):
     """Forward data to a model.
     
     Args:
-      model: object.
       generate_func: generate function
       cuda: bool
-      has_target: bool
+      return_target: bool
       
     Returns:
-      (outputs, targets, audio_names) | (outputs, audio_names)
+      dict, keys: 'audio_name', 'output'; optional keys: 'target'
     """
-
-    model.eval()
-
+    
     outputs = []
-    targets = []
     audio_names = []
-
+    
+    if return_target:
+        targets = []
+    
     # Evaluate on mini-batch
     for data in generate_func:
             
-        if has_target:
-            (batch_x, batch_y, batch_audio_names) = data
-            targets.append(batch_y[0])
+        if return_target:
+            (batch_x_for_an_audio, y, audio_name) = data
             
         else:
-            (batch_x, batch_audio_names) = data
+            (batch_x_for_an_audio, audio_name) = data
             
-        batch_x = move_data_to_gpu(batch_x, cuda)
+        batch_x_for_an_audio = move_data_to_gpu(batch_x_for_an_audio, cuda)
 
         # Predict
-        batch_output = model(batch_x)
-        batch_output = batch_output.data.cpu().numpy()
+        model.eval()
+        outputs_for_an_audio = model(batch_x_for_an_audio)
 
-        # Aggregate
-        # output = aggregate(batch_output)
+        # Append data
+        outputs.append(outputs_for_an_audio.data.cpu().numpy())
+        audio_names.append(audio_name)
         
-        outputs.append(batch_output)
-        audio_names.append(batch_audio_names)
+        if return_target:
+            targets.append(y)
+
+    dict = {}
 
     outputs = np.array(outputs)
-    audio_names = np.array(audio_names)
+    dict['output'] = outputs
     
-    if has_target:
+    audio_names = np.array(audio_names)
+    dict['audio_name'] = audio_names
+    
+    if return_target:
         targets = np.array(targets)
-        return outputs, targets, audio_names
+        dict['target'] = targets
         
-    else:
-        return outputs, audio_names
+    return dict
     
     
 def train(args):
@@ -150,19 +172,18 @@ def train(args):
     # Arguments & parameters
     workspace = args.workspace
     filename = args.filename
-    verified_only = args.verified_only
     validate = args.validate
+    holdout_fold = args.holdout_fold
     cuda = args.cuda
     mini_data = args.mini_data
     
     num_classes = len(config.labels)
-    batch_size = 128
 
     # Paths
     if mini_data:
         hdf5_path = os.path.join(workspace, 'features', 'logmel',
                                  'mini_development.h5')        
-                                 
+        
     else:
         hdf5_path = os.path.join(workspace, 'features', 'logmel',
                                  'development.h5')
@@ -170,18 +191,18 @@ def train(args):
     if validate:
         validation_csv = os.path.join(workspace, 'validate_meta.csv')
         
-        model_dir = os.path.join(workspace, 'models', filename, 
-            'verified_only={}, validate={}'.format(verified_only, validate))
+        models_dir = os.path.join(workspace, 'models', filename, 
+            'holdout_fold={}'.format(holdout_fold))
         
     else:
         validation_csv = None
+        
+        models_dir = os.path.join(workspace, 'models', filename, 'full_train')
     
-
-    
-    create_folder(model_dir)
+    create_folder(models_dir)
     
     # Model
-    model = BaselineCnn(num_classes)
+    model = Model(num_classes)
     
     if cuda:
         model.cuda()
@@ -193,18 +214,18 @@ def train(args):
     # Data generator
     generator = DataGenerator(hdf5_path=hdf5_path, 
                               batch_size=batch_size, 
-                              verified_only=verified_only, 
-                              validation_csv=validation_csv)
+                              time_steps=time_steps, 
+                              validation_csv=validation_csv, 
+                              holdout_fold=holdout_fold)
 
     iteration = 0
-    
     train_bgn_time = time.time()
 
     # Train on mini batches
-    for (batch_x, batch_y) in generator.generate():
+    for (batch_x, batch_y) in generator.generate_train():
         
         # Evaluate
-        if iteration % 100 == 0:
+        if iteration % 200 == 0:
 
             train_fin_time = time.time()
             
@@ -213,7 +234,7 @@ def train(args):
                                          data_type='train', 
                                          cuda=cuda)
                                          
-            logging.info("train acc: {:.3f}, train mapk: {:.3f}".format(
+            logging.info('train acc: {:.3f}, train mapk: {:.3f}'.format(
                 tr_acc, tr_mapk))
                         
             if validate:
@@ -222,15 +243,15 @@ def train(args):
                                              data_type='validate', 
                                              cuda=cuda)
                                              
-                logging.info("valid acc: {:.3f}, validate mapk: {:.3f}".format(
+                logging.info('valid acc: {:.3f}, validate mapk: {:.3f}'.format(
                     va_acc, va_mapk))
         
             train_time = train_fin_time - train_bgn_time
             validate_time = time.time() - train_fin_time
             
-            logging.info("------------------------------------")
-            logging.info("Iteration: {}, train time: {:.3f} s, eval time: {:.3f} s".format(
-                iteration, train_time, validate_time))
+            logging.info('------------------------------------')
+            logging.info('Iteration: {}, train time: {:.3f} s, eval time: '
+                '{:.3f} s'.format(iteration, train_time, validate_time))
             
             train_bgn_time = time.time()
         
@@ -244,7 +265,7 @@ def train(args):
         
         # Loss
         loss = F.nll_loss(output, batch_y)
-            
+        
         # Backward
         optimizer.zero_grad()
         loss.backward()
@@ -258,35 +279,51 @@ def train(args):
                              'state_dict': model.state_dict(), 
                              'optimizer': optimizer.state_dict(), }
             
-            save_out_path = os.path.join(model_dir, 
+            save_out_path = os.path.join(models_dir, 
                 'md_{}_iters.tar'.format(iteration))
                 
             torch.save(save_out_dict, save_out_path)
-            logging.info("Save model to {}".format(save_out_path))
+            logging.info('Save model to {}'.format(save_out_path))
+            
+        # Reduce learning rate
+        if iteration % 100 == 0:
+            for param_group in optimizer.param_groups:
+                param_group['lr'] *= 0.9
+                
+        # Stop learning
+        if iteration == 10001:
+            break
     
     
 def inference_validation(args):
     
     # Arguments & parameters
     workspace = args.workspace
-    verified_only = args.verified_only
+    holdout_fold = args.holdout_fold
     iteration = args.iteration
     filename = args.filename
     cuda = args.cuda
     
-    num_classes = len(config.labels)
+    classes_num = len(config.labels)
     
-    # Paths
+    # Paths    
     model_path = os.path.join(workspace, 'models', filename, 
-        'verified_only={}, validate=True'.format(verified_only), 
-        'md_{}_iters.tar'.format(iteration))
+                              'holdout_fold={}'.format(holdout_fold), 
+                              'md_{}_iters.tar'.format(iteration))
     
-    hdf5_path = os.path.join(workspace, 'features', 'logmel', 'development.h5')
+    hdf5_path = os.path.join(workspace, 'features', 'logmel', 
+                             'development.h5')
     
     validation_csv = os.path.join(workspace, 'validate_meta.csv')
     
+    stats_pickle_path = os.path.join(workspace, 'stats', filename, 
+                                     'holdout_fold{}'.format(holdout_fold), 
+                                     '{}_iters.p'.format(iteration))
+    
+    create_folder(os.path.dirname(stats_pickle_path))
+    
     # Model
-    model = BaselineCnn(num_classes)
+    model = Model(classes_num)
         
     checkpoint = torch.load(model_path)
     model.load_state_dict(checkpoint['state_dict'])
@@ -296,75 +333,88 @@ def inference_validation(args):
     
     # Data generator
     generator = DataGenerator(hdf5_path=hdf5_path, 
-                              batch_size=None, 
-                              verified_only=verified_only, 
-                              validation_csv=validation_csv)
+                              batch_size=batch_size, 
+                              time_steps=time_steps, 
+                              validation_csv=validation_csv, 
+                              holdout_fold=holdout_fold)
     
     generate_func = generator.generate_validate_slices(
-        hop_frames=test_hop_frames)
+        data_type='validate', 
+        manually_verified_only=True, 
+        shuffle=False, 
+        max_audios_num=None)
     
     # Forward
-    (outputs, targets, audio_names) = forward(model=model, 
-                                              generate_func=generate_func, 
-                                              cuda=cuda, 
-                                              has_target=True)
-    '''outputs: (audios_num, patches_num, classes_num), targets: (audios_num,)'''
+    dict = forward(model=model, 
+                   generate_func=generate_func, 
+                   cuda=cuda, 
+                   return_target=True)
 
-    outputs = aggregate(outputs)
+    outputs = dict['output']    # (audios_num, patches_num, classes_num)
+    targets = dict['target']    # (audios_num,)
+
+    agg_outputs = aggregate_outputs(outputs)
     '''(audios_num, classes_num)'''
 
-    predictions = np.argmax(outputs, axis=-1)
+    predictions = np.argmax(agg_outputs, axis=-1)
     '''(audios_num,)'''
     
-    sorted_indices = np.argsort(outputs, axis=-1)[:, ::-1][:, :kmax]
+    sorted_indices = np.argsort(agg_outputs, axis=-1)[:, ::-1][:, :kmax]
     '''(audios_num, kmax)'''
 
     # Accuracy
     accuracy = calculate_accuracy(predictions, targets)
 
     # mAP
-    mapk = calculate_mapk(targets[:, np.newaxis], sorted_indices, k=kmax)
+    mapk_value = mapk(actual=[[e] for e in targets], 
+                      predicted=[e.tolist() for e in sorted_indices], 
+                      k=kmax)
     
-    logging.info("")
-    logging.info("iteration: {}".format(iteration))
-    logging.info("accuracy: {:.3f}".format(accuracy))
-    logging.info("mapk: {:.3f}".format(mapk))
+    # Print
+    logging.info('')
+    logging.info('iteration: {}'.format(iteration))
+    logging.info('accuracy: {:.3f}'.format(accuracy))
+    logging.info('mapk: {:.3f}'.format(mapk_value))
+    
+    (class_wise_accuracy, correctness, total) = print_class_wise_accuracy(
+        predictions, targets)
         
-    accuracy_array = print_class_wise_accuracy(predictions, targets)
+    # Save stats for current holdout training
+    dict = {'correctness': correctness, 'total': total, 
+            'accuracy': accuracy, 'mapk': mapk_value}
     
-    plot_class_wise_accuracy(accuracy_array)
+    pickle.dump(dict, open(stats_pickle_path, 'wb'))
     
+    logging.info('Write out to {}'.format(stats_pickle_path))
     
+
 def inference_testing_data(args):
     
     # Arguments & parameters
     workspace = args.workspace
-    verified_only = args.verified_only
     iteration = args.iteration
     filename = args.filename
     cuda = args.cuda
     
     num_classes = len(config.labels)
-    ix_to_lb = config.ix_to_lb
     
     # Paths
-    model_path = os.path.join(workspace, 'models', filename, 
-        'verified_only={}, validate=False'.format(verified_only), 
-        'md_{}_iters.tar'.format(iteration))
+    model_path = os.path.join(workspace, 'models', filename, 'full_train', 
+                              'md_{}_iters.tar'.format(iteration))
     
     dev_hdf5_path = os.path.join(workspace, 'features', 'logmel', 
                                  'development.h5')
                                  
     test_hdf5_path = os.path.join(workspace, 'features', 'logmel', 'test.h5')
     
-    submission_csv = os.path.join(workspace, 'submissions', filename, 
-        'verified_only={}'.format(verified_only), 
-        'iteration={}'.format(iteration), 'submission.csv')
+    submission_path = os.path.join(workspace, 'submissions', filename, 
+                                   'iteration={}'.format(iteration), 
+                                   'submission.csv')
     
-    create_folder(os.path.dirname(submission_csv))
+    create_folder(os.path.dirname(submission_path))
     
     # Model
-    model = BaselineCnn(num_classes)
+    model = Model(num_classes)
         
     checkpoint = torch.load(model_path)
     model.load_state_dict(checkpoint['state_dict'])
@@ -375,49 +425,33 @@ def inference_testing_data(args):
     # Data generator
     test_generator = TestDataGenerator(dev_hdf5_path=dev_hdf5_path, 
                                        test_hdf5_path=test_hdf5_path, 
-                                       test_hop_frames=test_hop_frames)
+                                       test_hop_frames=test_hop_frames, 
+                                       time_steps=time_steps)
     
     generate_func = test_generator.generate_test_slices()
     
     # Forward
-    (outputs, audio_names) = forward(model=model, 
-                                     generate_func=generate_func, 
-                                     cuda=cuda, 
-                                     has_target=False)
+    dict = forward(model=model, 
+                   generate_func=generate_func, 
+                   cuda=cuda, 
+                   return_target=False)
     
-    outputs = aggregate(outputs)
+    outputs = dict['output']
+    audio_names = dict['audio_name']
+    
+    agg_outputs = aggregate_outputs(outputs)
     '''(audios_num, classes_num)'''
 
-    predictions = np.argmax(outputs, axis=-1)
+    predictions = np.argmax(agg_outputs, axis=-1)
     '''(audios_num,)'''
     
-    sorted_indices = np.argsort(outputs, axis=-1)[:, ::-1][:, :kmax]
+    sorted_indices = np.argsort(agg_outputs, axis=-1)[:, ::-1][:, :kmax]
     '''(audios_num, kmax)'''
     
-    # Write result to submission csv
-    f = open(submission_csv, 'w')
-    
-    f.write('fname,label\n')
-    
-    for (n, audio_name) in enumerate(audio_names):
-        
-        f.write('{}, '.format(audio_name))
-        
-        for k in range(kmax):
-            predicted_target = sorted_indices[n][k]
-            predicted_label = ix_to_lb[predicted_target]
+    # Write out submission csv
+    write_testing_data_submission_csv(submission_path, audio_names, 
+                                      sorted_indices)
 
-            f.write('{} '.format(predicted_label))
-            
-        f.write('\n')
-    
-    f.write('{},{}\n'.format('0b0427e2.wav', 'Acoustic_guitar'))
-    f.write('{},{}\n'.format('6ea0099f.wav', 'Acoustic_guitar'))
-    f.write('{},{}\n'.format('b39975f5.wav', 'Acoustic_guitar'))
-        
-    f.close()
-    
-    print("Write result to {}".format(submission_csv))
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -425,14 +459,14 @@ if __name__ == '__main__':
 
     parser_train = subparsers.add_parser('train')
     parser_train.add_argument('--workspace', type=str)
-    parser_train.add_argument('--verified_only', action='store_true', default=False)
     parser_train.add_argument('--validate', action='store_true', default=False)
+    parser_train.add_argument('--holdout_fold', type=int, choices=[1, 2, 3, 4])
     parser_train.add_argument('--cuda', action='store_true', default=False)
     parser_train.add_argument('--mini_data', action='store_true', default=False)
     
     parser_inference_validation = subparsers.add_parser('inference_validation')
     parser_inference_validation.add_argument('--workspace', type=str)    
-    parser_inference_validation.add_argument('--verified_only', action='store_true', default=False)
+    parser_inference_validation.add_argument('--holdout_fold', type=int, choices=[1, 2, 3, 4])
     parser_inference_validation.add_argument('--iteration', type=str)
     parser_inference_validation.add_argument('--cuda', action='store_true', default=False)
     

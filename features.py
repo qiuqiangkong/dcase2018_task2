@@ -28,7 +28,7 @@ class LogMelExtractor():
         self.melW = librosa.filters.mel(sr=sample_rate, 
                                         n_fft=window_size, 
                                         n_mels=mel_bins, 
-                                        fmin=0., 
+                                        fmin=50., 
                                         fmax=sample_rate // 2).T
     
     def transform(self, audio):
@@ -83,8 +83,6 @@ def calculate_features(args):
     corrupted_files = config.corrupted_files
 
     # Paths
-    
-    
     if data_type == 'development':
         audio_dir = os.path.join(dataset_dir, 'audio_train')
         meta_csv = os.path.join(args.dataset_dir, 'train.csv')
@@ -136,8 +134,11 @@ def calculate_features(args):
         audio_names = [audio_names[idx] for idx in audio_indexes]
         
         if data_type == 'development':
+            
             target_labels = [target_labels[idx] for idx in audio_indexes]
-            manually_verifications = [manually_verifications[idx] for idx in audio_indexes]
+            
+            manually_verifications = [manually_verifications[idx] 
+                                      for idx in audio_indexes]
         
         print("Number of audios: {}".format(len(audio_names)))
 
@@ -156,8 +157,8 @@ def calculate_features(args):
         maxshape=(None, mel_bins),
         dtype=np.float32)
 
-    bgn_fin_indices = []
     calculate_time = time.time()
+    bgn_fin_indices = []
 
     # Extract feature for audios
     for (n, audio_name) in enumerate(audio_names):
@@ -184,21 +185,23 @@ def calculate_features(args):
         bgn_fin_indices.append((bgn_indice, fin_indice))
 
     # Write infos to hdf5
-    hf.create_dataset(name='filename', data=[s.encode() for s in audio_names], dtype='S32')
+    hf.create_dataset(name='filename', 
+                      data=[s.encode() for s in audio_names], 
+                      dtype='S32')
     
-    hf.create_dataset(
-        name='bgn_fin_indices',
-        data=bgn_fin_indices,
-        dtype=np.int32)
+    hf.create_dataset(name='bgn_fin_indices',
+                      data=bgn_fin_indices,
+                      dtype=np.int32)
     
     if data_type == 'development':
         
-        hf.create_dataset(name='label', data=[s.encode() for s in target_labels], dtype='S32')
+        hf.create_dataset(name='label', 
+                          data=[s.encode() for s in target_labels], 
+                          dtype='S32')
         
-        hf.create_dataset(
-            name='manually_verification',
-            data=manually_verifications,
-            dtype=np.int32)
+        hf.create_dataset(name='manually_verification',
+                          data=manually_verifications,
+                          dtype=np.int32)
         
     hf.close()
     

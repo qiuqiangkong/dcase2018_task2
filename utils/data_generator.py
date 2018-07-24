@@ -11,231 +11,259 @@ import config
 
 class DataGenerator(object):
     
-    def __init__(self, hdf5_path, batch_size, verified_only, 
-        validation_csv=None, seed=1234):
+    def __init__(self, hdf5_path, batch_size, time_steps, 
+        validation_csv=None, holdout_fold=None, seed=1234):
         """
         Inputs:
-          hdf5_path: string
+          hdf5_path: str, path of hdf5 data
           batch_size: int
-          verified_only: bool
+          time_stes: int, number of frames of a logmel spectrogram patch
           validate_csv: string | None, if None then use all data for training
+          holdout_fold: int
           seed: int, random seed
         """
         
         # Parameters
         self.batch_size = batch_size
         self.random_state = np.random.RandomState(seed)
-        
+        self.validate_random_state = np.random.RandomState(0)
+
+        self.labels = config.labels
         lb_to_ix = config.lb_to_ix
-        self.time_steps = config.time_steps
+        
+        self.time_steps = time_steps
         self.hop_frames = self.time_steps // 2
+        
+        self.classes_num = len(self.labels)
         
         # Load data
         load_time = time.time()
         hf = h5py.File(hdf5_path, 'r')
             
-        self.audio_names = np.array([s.decode() for s in hf['filename']])
+        self.audio_names = np.array([s.decode() for s in hf['filename'][:]])
         self.x = hf['feature'][:]
         self.bgn_fin_indices = hf['bgn_fin_indices'][:]
-        target_labels = hf['label'][:]
+        event_labels = hf['label'][:]
+        self.y = np.array([lb_to_ix[s.decode()] for s in event_labels])
         self.manually_verifications = hf['manually_verification'][:]
-        
-        self.y = np.array([lb_to_ix[s.decode()] for s in target_labels])
         
         hf.close()
         
-        logging.info("Loading data time: {:.3f} s".format(
+        logging.info('Loading data time: {:.3f} s'.format(
             time.time() - load_time))
         
         # Load validation
         if validation_csv:
-            self.validations = self.calculate_validations(self.audio_names, 
-                                                          validation_csv)
-        
-        # Calculate scalar
-        scalar_time = time.time()
-        
-        (self.mean, self.std) = calculate_scalar(self.x)
-        
-        logging.info("Calculating scalar time: {:.3f} s".format(
-            time.time() - scalar_time))
-
-        # Get train & validate audio indexes
-        audios_num = len(self.bgn_fin_indices)
-        
-        train_audio_indexes = []
-        valid_audio_indexes = []
-        
-        for n in range(audios_num):
-            
-            selected_bool = (not verified_only) or \
-                (self.manually_verifications[n] == 1)
+            self.train_audio_indexes, self.validate_audio_indexes = \
+                self.get_audio_indexes(validation_csv, holdout_fold)
                 
-            validate_bool = validation_csv and (self.validations[n] == 1)
-            
-            if selected_bool:
-                
-                if validate_bool:
-                    valid_audio_indexes.append(n)
-                
-                else:
-                    train_audio_indexes.append(n)
-
-        self.train_audio_indexes = np.array(train_audio_indexes)
-        self.valid_audio_indexes = np.array(valid_audio_indexes)
-        
-        logging.info("Training audios number: {}".format(
+        else:
+            self.train_audio_indexes = np.arange(len(self.audio_names))
+            self.validate_audio_indexes = np.array([])
+                               
+        logging.info('Training audios number: {}'.format(
             len(self.train_audio_indexes)))
             
-        logging.info("Validation audios number: {}".format(
-            len(self.valid_audio_indexes)))
+        logging.info('Validation audios number: {}'.format(
+            len(self.validate_audio_indexes)))
+                    
+        # calculate scalar
+        (self.mean, self.std) = self.calculate_training_data_scalar()
+    
+        # Get training patches
+        self.train_patch_bgn_fin_y_tuples = \
+            self.calculate_patch_bgn_fin_y_tuples(self.train_audio_indexes)
         
-    def calculate_validations(self, audio_names, validation_csv):
-        """Load validation information from validation csv. 
+        logging.info('Training patches number: {}'.format(
+            len(self.train_patch_bgn_fin_y_tuples)))
+    
+    def get_audio_indexes(self, validation_csv, holdout_fold):
+        """Get train and audio indexes from validation csv. 
         """
         
         df = pd.read_csv(validation_csv, sep=',')
         df = pd.DataFrame(df)
         
-        validations = []
+        folds = df['fold']
         
-        for audio_name in audio_names:
-            
-            row = df.query("fname == '{}'".format(audio_name))
-            validation = row['validation'].values[0]
-            validations.append(validation)
-            
-        validations = np.array(validations)
+        train_audio_indexes = np.where(folds != holdout_fold)[0]
+        validate_audio_indexes = np.where(folds == holdout_fold)[0]
         
-        return validations
+        return train_audio_indexes, validate_audio_indexes
 
+    def calculate_training_data_scalar(self):
+        """Concatenate all training data and calculate scalar. 
+        """
         
-    def generate(self):
+        train_bgn_fin_indices = self.bgn_fin_indices[self.train_audio_indexes]
         
-        batch_size = self.batch_size
-        audio_indexes = self.train_audio_indexes
-        time_steps = self.time_steps
-        hop_frames = self.hop_frames
+        train_x_concat = []
+        
+        for [bgn, fin] in train_bgn_fin_indices:
+            train_x_concat.append(self.x[bgn : fin])
+            
+        train_x_concat = np.concatenate(train_x_concat, axis=0)
+        
+        (mean, std) = calculate_scalar(train_x_concat)
+        
+        return mean, std
+    
+    def calculate_patch_bgn_fin_y_tuples(self, audio_indexes):
+        """Calculate (bgn, fin, y) tuples for selecting patches for training. 
+        """
+        
+        bgn_fin_indices = self.bgn_fin_indices[audio_indexes]
+        
+        patch_bgn_fin_y_tuples = []
 
-        # Obtain training patches and corresponding targets
-        bgn_fins = []
-        ys = []
-        
         for n in range(len(audio_indexes)):
             
-            [bgn, fin] = self.bgn_fin_indices[audio_indexes][n]
-            slice_y = self.y[audio_indexes][n]
-        
-            pointer = bgn
-            
-            while pointer + time_steps < fin:
-                bgn_fins.append([pointer, pointer + time_steps])
-                pointer += hop_frames
-                ys.append(slice_y)
-                
-            bgn_fins.append([pointer, fin])
-            ys.append(slice_y)
-        
-        bgn_fins = np.array(bgn_fins)
-        ys = np.array(ys)
-        
-        logging.info("Number of training patches: {}".format(len(ys)))
+            [bgn, fin] = bgn_fin_indices[n]
+            y = self.y[audio_indexes[n]]
 
-        
-        iteration = 0
-        pointer = 0
-        
-        patch_indexes = np.arange(len(ys))
-        
-        self.random_state.shuffle(patch_indexes)
-        
-        # Generate mini-batch
-        while True:
+            patch_tuples_for_this_audio = \
+                self.get_patch_bgn_fin_y_tuples_for_an_audio(bgn, fin, y)
+                    
+            patch_bgn_fin_y_tuples += patch_tuples_for_this_audio
             
-            # Reset pointer
-            if pointer >= len(ys):
+        # Print class wise number of patches
+        patches_per_class = np.zeros(self.classes_num, dtype=np.int32)
+        
+        for k in range(self.classes_num):
+            patches_per_class[k] = np.sum(
+                [tuple[2] == k for tuple in patch_bgn_fin_y_tuples])
+        
+        if False:
+            for k in range(self.classes_num):
+                logging.info('{:<30}{}'.format(
+                    self.labels[k], patches_per_class[k]))
+        
+        return patch_bgn_fin_y_tuples
+        
+    def get_patch_bgn_fin_y_tuples_for_an_audio(self, bgn, fin, y):
+        """Get (bgn, fin, y) tuples in an audio. 
+        """
+        
+        if fin - bgn <= self.time_steps:
+            patch_tuples_for_this_audio = [(bgn, fin, y)]
+            
+        else:
+            bgns = np.arange(bgn, fin - self.time_steps, self.hop_frames)
+            patch_tuples_for_this_audio = []
+            
+            for bgn in bgns:
+                patch_tuples_for_this_audio.append(
+                    (bgn, bgn + self.time_steps, y))
                 
-                pointer = 0
-                self.random_state.shuffle(patch_indexes)
-            
-            batch_patch_indexes = patch_indexes[pointer : pointer + batch_size]
-            pointer += batch_size
-            
-            iteration += 1
-            
-            batch_bgn_fins = bgn_fins[batch_patch_indexes]
-            batch_y = ys[batch_patch_indexes]
-            
-            batch_x = []
-            
-            for n in range(len(batch_bgn_fins)):
-                
-                [bgn, fin] = batch_bgn_fins[n]
-                patch_x = self.x[bgn : fin]
-                
-                if len(patch_x) < time_steps:
-                    patch_x = repeat_seq(patch_x, time_steps)
-                
-                patch_x = self.transform(patch_x)
-                
-                batch_x.append(patch_x)
-                
-            batch_x = np.array(batch_x)
-            
-            yield batch_x, batch_y
+        return patch_tuples_for_this_audio
+    
+    def generate_train(self):
         
-    def generate_train_slices(self, hop_frames, max_audios=None):
-
-        return self.generate_slices(audio_indexes=self.train_audio_indexes, 
-                                    hop_frames=hop_frames, 
-                                    max_audios=max_audios)
-        
-    def generate_validate_slices(self, hop_frames, max_audios=None):
-        
-        return self.generate_slices(audio_indexes=self.valid_audio_indexes, 
-                                    hop_frames=hop_frames, 
-                                    max_audios=max_audios)
-        
-    def generate_slices(self, audio_indexes, hop_frames, max_audios=None):
-
+        batch_size = self.batch_size
+        patch_bgn_fin_y_tuples = self.train_patch_bgn_fin_y_tuples
         time_steps = self.time_steps
 
-        count = 0
+        patches_num = len(patch_bgn_fin_y_tuples)
+
+        self.random_state.shuffle(patch_bgn_fin_y_tuples)
+
+        iteration = 0
+        pointer = 0
+
+        while True:
+
+            # Reset pointer
+            if pointer >= patches_num:
+                pointer = 0
+                self.random_state.shuffle(patch_bgn_fin_y_tuples)
+
+            # Get batch indexes
+            batch_patch_bgn_fin_y_tuples = patch_bgn_fin_y_tuples[
+                pointer: pointer + batch_size]
+                
+            pointer += batch_size
+
+            iteration += 1
+            
+            (batch_x, batch_y) = self.get_batch_x_y(
+                self.x, batch_patch_bgn_fin_y_tuples)
+            
+            # Transform data
+            batch_x = self.transform(batch_x)
+
+            yield batch_x, batch_y
         
-        for audio_index in audio_indexes:
-
+    def get_batch_x_y(self, full_x, batch_patch_bgn_fin_y_tuples):
+        """Get batch_x and batch_y, repeat is audio is short. 
+        """
+        
+        batch_x = []
+        batch_y = []
+        
+        for (bgn, fin, y) in batch_patch_bgn_fin_y_tuples:
             
-            if count == max_audios:
+            batch_y.append(y)
+            
+            if fin - bgn == self.time_steps:
+                batch_x.append(full_x[bgn : fin])
+                
+            else:
+                batch_x.append(repeat_seq(full_x[bgn : fin], self.time_steps))
+
+        batch_x = np.array(batch_x)
+        batch_y = np.array(batch_y)
+        
+        return batch_x, batch_y
+
+    def generate_validate_slices(self, data_type, manually_verified_only, 
+                                 shuffle, max_audios_num=None):
+        """Generate patches in an audio. 
+        
+        Args:
+          data_type: 'train' | 'validate'
+          manually_verified_only: bool
+          shuffle: bool
+          max_audios_num: int, set maximum audios to speed up validation
+        """
+        
+        if data_type == 'train':
+            audio_indexes = self.train_audio_indexes
+            
+        elif data_type == 'validate':
+            audio_indexes = self.validate_audio_indexes
+            
+        else:
+            raise Exception('Incorrect data_type!')
+        
+        if manually_verified_only:
+            
+            manually_verified_indexes = np.where(
+                self.manually_verifications[audio_indexes]==1)[0]
+                
+            audio_indexes = audio_indexes[manually_verified_indexes]
+        
+        if shuffle:
+            self.validate_random_state.shuffle(audio_indexes)
+        
+        for (n, audio_index) in enumerate(audio_indexes):
+            
+            if n == max_audios_num:
                 break
-
+            
             [bgn, fin] = self.bgn_fin_indices[audio_index]
-            slice_x = self.x[bgn : fin]
-
-            if len(slice_x) < time_steps:
-                slice_x = repeat_seq(slice_x, time_steps)
-            
-            pointer = 0
-            batch_x = []
-            batch_y = []
-            
-            while(pointer + time_steps <= len(slice_x)):
-                
-                patch_x = slice_x[pointer : pointer + time_steps]
-                
-                patch_x = self.transform(patch_x)
-                
-                pointer += hop_frames
-                
-                batch_x.append(patch_x)
-                batch_y.append(self.y[audio_index])
-
-            batch_x = np.array(batch_x)
-            batch_y = np.array(batch_y)
+            y = self.y[audio_index]
             audio_name = self.audio_names[audio_index]
-
-            count += 1
             
-            yield batch_x, batch_y, audio_name
+            patch_tuples_for_this_audio = \
+                self.get_patch_bgn_fin_y_tuples_for_an_audio(bgn, fin, y)
+        
+            (batch_x_for_an_audio, _) = self.get_batch_x_y(
+                self.x, patch_tuples_for_this_audio)
+        
+            batch_x_for_an_audio = self.transform(batch_x_for_an_audio)
+
+            yield batch_x_for_an_audio, y, audio_name
+                
             
     def transform(self, x):
         """Transform data. 
@@ -252,15 +280,26 @@ class DataGenerator(object):
             
 class TestDataGenerator(DataGenerator):
     
-    def __init__(self, dev_hdf5_path, test_hdf5_path, test_hop_frames):
+    def __init__(self, dev_hdf5_path, test_hdf5_path, time_steps, 
+                 test_hop_frames):
+        """Test data generator. 
+        
+        Args:
+          dev_hdf5_path: str, path of development hdf5 file
+          test_hdf5_path: str, path of test hdf5 file
+          time_stes: int, number of frames of a logmel spectrogram patch
+          test_hop_frames: int
+        """
         
         super(TestDataGenerator, self).__init__(
             hdf5_path=dev_hdf5_path, 
             batch_size=None, 
-            verified_only=False,
+            time_steps=time_steps,
             validation_csv=None)
         
         self.test_hop_frames = test_hop_frames
+        
+        self.corrupted_files = config.corrupted_files
         
         # Load test data
         load_time = time.time()
@@ -272,45 +311,30 @@ class TestDataGenerator(DataGenerator):
         
         hf.close()
         
-        logging.info("Loading data time: {:.3f} s".format(
+        logging.info('Loading data time: {:.3f} s'.format(
             time.time() - load_time))
         
     def generate_test_slices(self):
         
-        time_steps = self.time_steps
         test_hop_frames = self.test_hop_frames
         corrupted_files = config.corrupted_files
         
-        audios_num = len(self.test_audio_names)
+        audio_indexes = range(len(self.test_audio_names))
         
-        for n in range(audios_num):
+        for (n, audio_index) in enumerate(audio_indexes):
             
-            audio_name = self.test_audio_names[n]
+            [bgn, fin] = self.test_bgn_fin_indices[audio_index]
             
-            if audio_name in corrupted_files:
-                logging.info("File {} is corrupted!".format(audio_name))
-                
-            else:
-                [bgn, fin] = self.test_bgn_fin_indices[n]
-                
-                slice_x = self.test_x[bgn : fin]
+            audio_name = self.test_audio_names[audio_index]
+            
+            if fin > bgn:
+            
+                patch_tuples_for_this_audio = \
+                    self.get_patch_bgn_fin_y_tuples_for_an_audio(bgn, fin, y=None)
+            
+                (batch_x_for_an_audio, _) = \
+                    self.get_batch_x_y(self.test_x, patch_tuples_for_this_audio)
+            
+                batch_x_for_an_audio = self.transform(batch_x_for_an_audio)
     
-                if len(slice_x) < time_steps:
-                    slice_x = repeat_seq(slice_x, time_steps)
-                
-                pointer = 0
-                batch_x = []
-                
-                while(pointer + time_steps <= len(slice_x)):
-                    
-                    patch_x = slice_x[pointer : pointer + time_steps]
-                    
-                    patch_x = self.transform(patch_x)
-                    
-                    pointer += test_hop_frames
-                    
-                    batch_x.append(patch_x)
-    
-                batch_x = np.array(batch_x)
-                
-                yield batch_x, audio_name
+                yield batch_x_for_an_audio, audio_name

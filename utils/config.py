@@ -8,11 +8,6 @@ window_size = 2048
 overlap = 1024
 """int: Amount of overlap between frames"""
 
-time_steps = 128
-"""int: The time steps of a specrogram patch for training"""
-
-test_hop_frames = 16
-
 mel_bins = 64
 """int: Number of Mel bins"""
 

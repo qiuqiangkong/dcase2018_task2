@@ -38,39 +38,35 @@ Or run the commands in runme.sh line by line, including:
 
 ## Result
 
-We apply a convolutional neural network on the log mel spectrogram feature to solve this task. Training takes around 50 ms / iteration on a GTX Titan X GPU. The model is trained for 3000 iterations. 
+We apply a convolutional neural network on the log mel spectrogram feature to solve this task. Training takes around 300 ms / iteration on a GTX Titan X GPU for the VGGish model. The training almost converge when after 3000 iterations. 
 
 <pre>
-root        : INFO     Loading data time: 6.799 s
-root        : INFO     Calculating scalar time: 0.528 s
-root        : INFO     Training audios number: 8653
-root        : INFO     Validation audios number: 820
-root        : INFO     Number of training patches: 27520
-root        : INFO     train acc: 0.040, train mapk: 0.055
-root        : INFO     valid acc: 0.029, validate mapk: 0.049
-root        : INFO     ------------------------------------
-root        : INFO     Iteration: 0, train time: 1.161 s, eval time: 1.489 s
-root        : INFO     train acc: 0.540, train mapk: 0.623
-root        : INFO     valid acc: 0.541, validate mapk: 0.626
-root        : INFO     ------------------------------------
+Loading data time: 1.708 s
+Training audios number: 7104
+Validation audios number: 2369
+Training patches number: 18777
+train acc: 0.020, train mapk: 0.032
+valid acc: 0.024, validate mapk: 0.040
+------------------------------------
+Iteration: 0, train time: 0.004 s, eval time: 2.829 s
+train acc: 0.747, train mapk: 0.828
+valid acc: 0.693, validate mapk: 0.775
+------------------------------------
 ......
-root        : INFO     ------------------------------------
-root        : INFO     Iteration: 3000, train time: 6.082 s, eval time: 1.607 s
-root        : INFO     train acc: 1.000, train mapk: 1.000
-root        : INFO     valid acc: 0.859, validate mapk: 0.874
-root        : INFO     ------------------------------------
-root        : INFO     Iteration: 3100, train time: 5.162 s, eval time: 1.571 s
-root        : INFO     train acc: 1.000, train mapk: 1.000
-root        : INFO     valid acc: 0.863, validate mapk: 0.875
+------------------------------------
+Iteration: 2800, train time: 59.517 s, eval time: 3.286 s
+train acc: 1.000, train mapk: 1.000
+valid acc: 0.897, validate mapk: 0.930
+......
 </pre>
 
 ### Overall accuracy
 
-In development, we leave out 820 manually verified audios for evaluation. The overall performance looks like:
+We split development data to 4 folds. The overall performance on the 4 folds is:
 
 |       | accuracy | mAP@3 |
 |:-----:|----------|-------|
-| Total | 0.876    | 0.887 |
+| Total | 0.895    | 0.928 |
 
 
 ### Class-wise accuracy
