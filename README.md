@@ -16,7 +16,19 @@ The dataset is downloadable from http://dcase.community/challenge2018/task-acous
 
 
 ## Run the code
-**1. (Optional) Install dependent packages.** If you are using conda, simply run:
+**Prepare data.** Download and upzip the data. The data looks like:
+
+<pre>
+.
+├── audio_train (9473 audios)
+│     └── ...
+├── audio_test (9400 audios)
+│     └── ...
+├── train.csv
+└── sample_submission.csv
+</pre>
+
+**1. (Optional) Install dependent packages.** The code is implememnted with python 3. If you are using conda, simply run:
 
 $ conda env create -f environment.yml
 

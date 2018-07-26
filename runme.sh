@@ -21,7 +21,7 @@ python features.py logmel --dataset_dir=$DATASET_DIR --workspace=$WORKSPACE --da
 CUDA_VISIBLE_DEVICES=$GPU_ID python $BACKEND/main_pytorch.py train --workspace=$WORKSPACE --validate --holdout_fold=$HOLDOUT_FOLD --cuda
 
 # Validation
-CUDA_VISIBLE_DEVICES=$GPU_ID python $BACKEND/main_pytorch.py inference_validation --workspace=$WORKSPACE --holdout_fold=$HOLDOUT_FOLD --iteration=3000 --cuda
+CUDA_VISIBLE_DEVICES=$GPU_ID python $BACKEND/main_pytorch.py inference_validation_data --workspace=$WORKSPACE --holdout_fold=$HOLDOUT_FOLD --iteration=3000 --cuda
 
 
 ############ Full train ############

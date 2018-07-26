@@ -192,7 +192,7 @@ def train(args):
         validation_csv = os.path.join(workspace, 'validate_meta.csv')
         
         models_dir = os.path.join(workspace, 'models', filename, 
-            'holdout_fold={}'.format(holdout_fold))
+            'holdout_fold{}'.format(holdout_fold))
         
     else:
         validation_csv = None
@@ -295,7 +295,7 @@ def train(args):
             break
     
     
-def inference_validation(args):
+def inference_validation_data(args):
     
     # Arguments & parameters
     workspace = args.workspace
@@ -308,7 +308,7 @@ def inference_validation(args):
     
     # Paths    
     model_path = os.path.join(workspace, 'models', filename, 
-                              'holdout_fold={}'.format(holdout_fold), 
+                              'holdout_fold{}'.format(holdout_fold), 
                               'md_{}_iters.tar'.format(iteration))
     
     hdf5_path = os.path.join(workspace, 'features', 'logmel', 
@@ -385,7 +385,7 @@ def inference_validation(args):
     
     pickle.dump(dict, open(stats_pickle_path, 'wb'))
     
-    logging.info('Write out to {}'.format(stats_pickle_path))
+    logging.info('Write out stat to {}'.format(stats_pickle_path))
     
 
 def inference_testing_data(args):
@@ -464,11 +464,11 @@ if __name__ == '__main__':
     parser_train.add_argument('--cuda', action='store_true', default=False)
     parser_train.add_argument('--mini_data', action='store_true', default=False)
     
-    parser_inference_validation = subparsers.add_parser('inference_validation')
-    parser_inference_validation.add_argument('--workspace', type=str, required=True)    
-    parser_inference_validation.add_argument('--holdout_fold', type=int, choices=[1, 2, 3, 4])
-    parser_inference_validation.add_argument('--iteration', type=str, required=True)
-    parser_inference_validation.add_argument('--cuda', action='store_true', default=False)
+    parser_inference_validation_data = subparsers.add_parser('inference_validation_data')
+    parser_inference_validation_data.add_argument('--workspace', type=str, required=True)    
+    parser_inference_validation_data.add_argument('--holdout_fold', type=int, choices=[1, 2, 3, 4])
+    parser_inference_validation_data.add_argument('--iteration', type=str, required=True)
+    parser_inference_validation_data.add_argument('--cuda', action='store_true', default=False)
     
     parser_inference_testing_data = subparsers.add_parser('inference_testing_data')
     parser_inference_testing_data.add_argument('--workspace', type=str, required=True)    
@@ -487,8 +487,8 @@ if __name__ == '__main__':
     if args.mode == 'train':          
         train(args)
         
-    elif args.mode == 'inference_validation':
-        inference_validation(args)
+    elif args.mode == 'inference_validation_data':
+        inference_validation_data(args)
 
     elif args.mode == 'inference_testing_data':
         inference_testing_data(args)
