@@ -10,11 +10,11 @@ HOLDOUT_FOLD=1
 GPU_ID=0
 
 # Create validation csv
-python create_validation.py --dataset_dir=$DATASET_DIR --workspace=$WORKSPACE
+python utils/create_validation.py --dataset_dir=$DATASET_DIR --workspace=$WORKSPACE
 
 # Calculate features
-python features.py logmel --dataset_dir=$DATASET_DIR --workspace=$WORKSPACE --data_type=development
-python features.py logmel --dataset_dir=$DATASET_DIR --workspace=$WORKSPACE --data_type=test
+python utils/features.py logmel --dataset_dir=$DATASET_DIR --workspace=$WORKSPACE --data_type=development
+python utils/features.py logmel --dataset_dir=$DATASET_DIR --workspace=$WORKSPACE --data_type=test
 
 ############ Development ############
 # Train
