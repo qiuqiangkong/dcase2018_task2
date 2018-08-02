@@ -34,6 +34,8 @@ $ conda env create -f environment.yml
 
 $ conda activate py3_dcase2018_task2
 
+<span style="color:red">(We developed this system with python 3. If you are using pytorch as backend then pytorch 0.4.0 is required.)</span>
+
 **2. Then simply run:**
 
 $ ./runme.sh
@@ -89,6 +91,9 @@ The class-wise accuracy is shown as blow:
 
 ## Summary
 This codebase provides a convolutional neural network (CNN) for DCASE 2018 challenge Task 2. Some sound classes such as 'applause', 'bark' have high classification accuracy. Some sound classes such as 'squeak', 'telephone' have low classification accuracy. 
+
+## FAQ
+If you met running out of GPU memory error, then try reduce batch_size. 
 
 ### External link
 

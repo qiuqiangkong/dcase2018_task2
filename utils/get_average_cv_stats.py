@@ -51,14 +51,13 @@ def get_average_cv_stats(args):
 if __name__ == '__main__':
     """Load the result of cross validation and summarize to a single result. 
     
-    Example: python utils/get_average_cv_stats.py --workspace=$WORKSPACE 
-    --filename=main_pytorch --iteration=3000
+    Example: python utils/get_average_cv_stats.py --workspace=$WORKSPACE --filename=main_pytorch --iteration=3000
     """
     
     parser = argparse.ArgumentParser(description='')
-    parser.add_argument('--workspace', type=str)
-    parser.add_argument('--filename', type=str)
-    parser.add_argument('--iteration', type=str)
+    parser.add_argument('--workspace', type=str, required=True)
+    parser.add_argument('--filename', type=str, required=True)
+    parser.add_argument('--iteration', type=str, required=True)
     
     args = parser.parse_args()
     

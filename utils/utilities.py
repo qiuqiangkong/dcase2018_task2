@@ -136,12 +136,13 @@ def plot_class_wise_accuracy(class_wise_accuracy):
     labels = config.labels
     classes_num = len(labels)
     
-    fig, ax = plt.subplots(1, 1, figsize=(13, 5))
+    fig, ax = plt.subplots(1, 1, figsize=(7.5, 4))
     ax.bar(np.arange(classes_num), class_wise_accuracy, alpha=0.5)
+    ax.set_ylabel('Accuracy')
     ax.set_xlim(0, classes_num)
     ax.set_ylim(0., 1.)
     ax.xaxis.set_ticks(np.arange(classes_num))
-    ax.xaxis.set_ticklabels(labels, rotation=90, fontsize='large')
+    ax.xaxis.set_ticklabels(labels, rotation=90)
     plt.tight_layout()
     plt.show()
     

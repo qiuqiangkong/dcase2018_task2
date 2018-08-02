@@ -179,7 +179,7 @@ def train(args):
     
     num_classes = len(config.labels)
 
-    # Paths
+    # Use partial data for training
     if mini_data:
         hdf5_path = os.path.join(workspace, 'features', 'logmel',
                                  'mini_development.h5')        
@@ -254,6 +254,23 @@ def train(args):
                 '{:.3f} s'.format(iteration, train_time, validate_time))
             
             train_bgn_time = time.time()
+            
+        # Save model
+        if iteration % 1000 == 0 and iteration > 0:
+            save_out_dict = {'iteration': iteration, 
+                             'state_dict': model.state_dict(), 
+                             'optimizer': optimizer.state_dict(), }
+            
+            save_out_path = os.path.join(models_dir, 
+                'md_{}_iters.tar'.format(iteration))
+                
+            torch.save(save_out_dict, save_out_path)
+            logging.info('Save model to {}'.format(save_out_path))
+            
+        # Reduce learning rate
+        if iteration % 100 == 0 and iteration > 0:
+            for param_group in optimizer.param_groups:
+                param_group['lr'] *= 0.9
         
         batch_x = move_data_to_gpu(batch_x, cuda)
         batch_y = move_data_to_gpu(batch_y, cuda)
@@ -273,23 +290,6 @@ def train(args):
         
         iteration += 1
         
-        # Save model
-        if iteration % 1000 == 0 and iteration > 0:
-            save_out_dict = {'iteration': iteration, 
-                             'state_dict': model.state_dict(), 
-                             'optimizer': optimizer.state_dict(), }
-            
-            save_out_path = os.path.join(models_dir, 
-                'md_{}_iters.tar'.format(iteration))
-                
-            torch.save(save_out_dict, save_out_path)
-            logging.info('Save model to {}'.format(save_out_path))
-            
-        # Reduce learning rate
-        if iteration % 100 == 0:
-            for param_group in optimizer.param_groups:
-                param_group['lr'] *= 0.9
-                
         # Stop learning
         if iteration == 10001:
             break
