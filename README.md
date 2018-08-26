@@ -92,6 +92,9 @@ The class-wise accuracy is shown as blow:
 ## Summary
 This codebase provides a convolutional neural network (CNN) for DCASE 2018 challenge Task 2. Some sound classes such as 'applause', 'bark' have high classification accuracy. Some sound classes such as 'squeak', 'telephone' have low classification accuracy. 
 
+## Cite
+"Kong, Qiuqiang, Turab Iqbal, Yong Xu, Wenwu Wang, and Mark D. Plumbley. "DCASE 2018 Challenge baseline with convolutional neural networks." arXiv preprint arXiv:1808.00773 (2018)."
+
 ## FAQ
 If you met running out of GPU memory error, then try reduce batch_size. 
 
